@@ -197,6 +197,7 @@ class H11Protocol(asyncio.Protocol):
                         "version": self.config.asgi_version,
                         "spec_version": "2.1",
                     },
+                    "extensions": {"http.response.zerocopysend": {}},
                     "http_version": event.http_version.decode("ascii"),
                     "server": self.server,
                     "client": self.client,
@@ -230,6 +231,7 @@ class H11Protocol(asyncio.Protocol):
                 self.cycle = RequestResponseCycle(
                     scope=self.scope,
                     conn=self.conn,
+                    loop=self.loop,
                     transport=self.transport,
                     flow=self.flow,
                     logger=self.logger,
@@ -364,6 +366,7 @@ class RequestResponseCycle:
         self,
         scope,
         conn,
+        loop,
         transport,
         flow,
         logger,
@@ -375,6 +378,7 @@ class RequestResponseCycle:
     ):
         self.scope = scope
         self.conn = conn
+        self.loop = loop
         self.transport = transport
         self.flow = flow
         self.logger = logger
@@ -439,6 +443,14 @@ class RequestResponseCycle:
             {"type": "http.response.body", "body": b"Internal Server Error"}
         )
 
+    def zerocopysend(self, message):
+        self.loop.sendfile(
+            self.transport,
+            file=message["file"],
+            offset=message.get("offset", 0),
+            count=message.get("count", None),
+        )
+
     # ASGI interface
     async def send(self, message):
         message_type = message["type"]
@@ -483,6 +495,10 @@ class RequestResponseCycle:
             self.transport.write(output)
 
         elif not self.response_complete:
+            if message_type == "http.response.zerocopysend":
+                self.zerocopysend(message)
+                return
+
             # Sending response body
             if message_type != "http.response.body":
                 msg = "Expected ASGI message 'http.response.body', but got '%s'."

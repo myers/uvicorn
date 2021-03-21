@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import tempfile
 
 import pytest
 
@@ -147,6 +148,9 @@ class MockLoop:
             else:
                 later.append((delay, callback, args))
         self.later = later
+
+    def sendfile(self, transport, file, **kwargs):
+        transport.write(file.read())
 
 
 class MockTask:
@@ -396,6 +400,24 @@ def test_exception_during_response(protocol_cls):
     protocol.data_received(SIMPLE_GET_REQUEST)
     protocol.loop.run_one()
     assert b"HTTP/1.1 500 Internal Server Error" not in protocol.transport.buffer
+    assert protocol.transport.is_closing()
+
+
+@pytest.mark.parametrize("protocol_cls", HTTP_PROTOCOLS)
+def test_zerocopysend(protocol_cls):
+    async def app(scope, receive, send):
+        file = tempfile.TemporaryFile()
+        file.write(b"hello world")
+        file.seek(0)
+        assert "http.response.zerocopysend" in scope.get("extensions", {}).keys()
+        await send({"type": "http.response.start", "status": 200})
+        await send({"type": "http.response.zerocopysend", "file": file})
+
+    protocol = get_connected_protocol(app, protocol_cls)
+    protocol.data_received(SIMPLE_GET_REQUEST)
+    protocol.loop.run_one()
+    assert b"HTTP/1.1 200 OK" in protocol.transport.buffer
+    assert b"hello world" in protocol.transport.buffer
     assert protocol.transport.is_closing()
 
 

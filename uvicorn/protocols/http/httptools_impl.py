@@ -224,6 +224,7 @@ class HttpToolsProtocol(asyncio.Protocol):
         self.scope = {
             "type": "http",
             "asgi": {"version": self.config.asgi_version, "spec_version": "2.1"},
+            "extensions": {"http.response.zerocopysend": {}},
             "http_version": "1.1",
             "server": self.server,
             "client": self.client,
@@ -263,6 +264,7 @@ class HttpToolsProtocol(asyncio.Protocol):
         existing_cycle = self.cycle
         self.cycle = RequestResponseCycle(
             scope=self.scope,
+            loop=self.loop,
             transport=self.transport,
             flow=self.flow,
             logger=self.logger,
@@ -356,6 +358,7 @@ class RequestResponseCycle:
     def __init__(
         self,
         scope,
+        loop,
         transport,
         flow,
         logger,
@@ -368,6 +371,7 @@ class RequestResponseCycle:
         on_response,
     ):
         self.scope = scope
+        self.loop = loop
         self.transport = transport
         self.flow = flow
         self.logger = logger
@@ -432,6 +436,14 @@ class RequestResponseCycle:
         )
         await self.send(
             {"type": "http.response.body", "body": b"Internal Server Error"}
+        )
+
+    def zerocopysend(self, message):
+        self.loop.sendfile(
+            self.transport,
+            file=message["file"],
+            offset=message.get("offset", 0),
+            count=message.get("count", None),
         )
 
     # ASGI interface
@@ -502,6 +514,10 @@ class RequestResponseCycle:
             self.transport.write(b"".join(content))
 
         elif not self.response_complete:
+            if message_type == "http.response.zerocopysend":
+                self.zerocopysend(message)
+                return
+
             # Sending response body
             if message_type != "http.response.body":
                 msg = "Expected ASGI message 'http.response.body', but got '%s'."
