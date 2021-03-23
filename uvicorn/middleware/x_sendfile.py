@@ -20,7 +20,7 @@ class XSendfileMiddleware:
         async def send_wrapper(message):
             if message.get("type", "") == "http.response.start":
                 for header in message.get("headers", []):
-                    if header[0] == b"x-sendfile":
+                    if header[0].lower() == b"x-sendfile":
                         filepath = header[1]
                         message["headers"].remove(header)
                         await send(message)
