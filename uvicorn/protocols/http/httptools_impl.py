@@ -439,6 +439,7 @@ class RequestResponseCycle:
         )
 
     async def zerocopysend(self, message):
+        print(f"MYERS loop is {self.loop!r}")
         await self.loop.sendfile(
             self.transport,
             file=message["file"],
