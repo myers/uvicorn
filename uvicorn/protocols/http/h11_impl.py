@@ -443,8 +443,8 @@ class RequestResponseCycle:
             {"type": "http.response.body", "body": b"Internal Server Error"}
         )
 
-    def zerocopysend(self, message):
-        self.loop.sendfile(
+    async def zerocopysend(self, message):
+        await self.loop.sendfile(
             self.transport,
             file=message["file"],
             offset=message.get("offset", 0),
@@ -496,7 +496,7 @@ class RequestResponseCycle:
 
         elif not self.response_complete:
             if message_type == "http.response.zerocopysend":
-                self.zerocopysend(message)
+                await self.zerocopysend(message)
                 return
 
             # Sending response body
